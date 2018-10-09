@@ -13,15 +13,15 @@ using namespace cv;
 const std::string CAM_PATH = "/dev/video0";
 const int CANNY_LOWER_BOUND = 100;
 const int CANNY_UPPER_BOUND = 200;
-const int RHO = 2;
+const int MY_RHO = 2;
 const double THETA = CV_PI / 90.0;
 const int HOUGH_LINE_THRESHOLD = 50;
 const int MIN_LINE_LENGTH = 60;
 const int MAX_LINE_GAP = 50;
 
 
-double dot(const std::vector<double> * vector1, const std::vector<double> * vector2);
-Vec4i findClosestLine(const std::vector<Vec4i> * lines, double kernel_x, double kernel_y);
+double dot(std::vector<double> vector1, std::vector<double> vector2);
+Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel_y);
 
 inline double distance(double x1, double y1, double x2, double y2)
 {
@@ -53,7 +53,7 @@ int main()
         Canny(gray_image, contour, CANNY_LOWER_BOUND, CANNY_UPPER_BOUND);
 
         std::vector<Vec4i> lines, leftLines, rightLines;
-        HoughLinesP(contour, lines, RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
+        HoughLinesP(contour, lines, MY_RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
 
         // take part into different types and filter useless lines
         for (Vec4i & vec: lines) {
@@ -72,13 +72,13 @@ int main()
                 double ratio = (y1 - y2) * 1.0 / (x1 - x2);
                 if (left && right) // 水平线，肯定不正常
                     continue;
-                else if (left)
+                else if (left) {
                     if (-ratio > 0.2)
                         leftLines.push_back(vec);
-                else
+                } else {
                     if (ratio > 0.2)
                         rightLines.push_back(vec);
-
+                }
             } else {
                 if (left)
                     leftLines.push_back(vec);
@@ -100,20 +100,19 @@ int main()
 
 }
 
-double dot(const std::vector<double> * vector1, const std::vector<double> * vector2)
+double dot(std::vector<double> vector1, std::vector<double> vector2)
 {
     double sum = 0.0;
-    for (int i = 0; i < vector1->size(); i++)
+    for (int i = 0; i < vector1.size(); i++)
         sum += vector1[i] * vector2[i];
     return sum;
 }
 
-Vec4i findClosestLine(const std::vector<Vec4i> * lines, double kernel_x, double kernel_y)
+Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel_y)
 {
     double dist = INFINITY;
     Vec4i vec4i;
-    for (auto iter = lines->begin(); iter < lines->end(); iter++) {
-        Vec4i vec = iter->conj();
+    for (Vec4i vec: *lines) {
         int x1 = vec[0], y1 = vec[1], x2 = vec[2], y2 = vec[3];
         double lineLength = distance(x1, y1, x2, y2);
 
@@ -123,10 +122,10 @@ Vec4i findClosestLine(const std::vector<Vec4i> * lines, double kernel_x, double 
         vec2.push_back(x2 - kernel_x);
         vec2.push_back(y2 - kernel_y);
 
-        double lenVec1 = sqrt(dot(&vec1, &vec1));
-        double lenVec2 = sqrt(dot(&vec2, &vec2));
+        double lenVec1 = sqrt(dot(vec1, vec1));
+        double lenVec2 = sqrt(dot(vec2, vec2));
 
-        double cos = dot(&vec1, &vec2) * 1.0 / lenVec1 / lenVec2;
+        double cos = dot(vec1, vec2) * 1.0 / lenVec1 / lenVec2;
         double sin = sqrt(1 - cos * cos);
 
         double currentDist = lenVec1 * lenVec2 * sin / lineLength;
