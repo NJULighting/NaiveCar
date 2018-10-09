@@ -6,9 +6,12 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "GPIOlib.h"
+
 #define _DEBUG
 
 using namespace cv;
+using namespace GPIO;
 
 const std::string CAM_PATH = "/dev/video0";
 const int CANNY_LOWER_BOUND = 100;
@@ -43,6 +46,7 @@ inline bool emptyLine(Vec4i vec)
 
 int main()
 {
+    // 从摄像头获取图片信息
 //    VideoCapture capture(CAM_PATH);
 //    if (!capture.isOpened())
 //    {
@@ -54,7 +58,7 @@ int main()
 //
 //    std::clog << "Frame Size: " << width << height << std::endl;
 
-    Mat image = imread("/Users/iznauy/NaiveCar/example.jpg", IMREAD_COLOR);
+    Mat image = imread("/Users/iznauy/NaiveCar/example5.jpg", IMREAD_COLOR);
     Mat gray_image, contour;
 
     double height = image.rows;
@@ -133,6 +137,9 @@ int main()
 
         imshow("show lines", image);
         waitKey(0);
+
+
+
         break;
 
         #endif
@@ -196,14 +203,16 @@ Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel
 
 MoveState generateNextMoveState(Vec4i leftLine, Vec4i rightLine)
 {
-//    bool left = emptyLine(leftLine), right = emptyLine(rightLine);
-//    if (left && right)
-//        return move_forward;
-//    if (right)
-//        return move_right;
-//    if (left)
-//        return move_left;
-//    double leftRatio = ratio(leftLine), rightRatio = ratio(rightLine);
-//    if (leftRatio != INFINITY && rightRatio != INFINITY)
+    bool left = emptyLine(leftLine), right = emptyLine(rightLine);
+    if (left && right)
+        return move_forward;
+    if (right)
+        return move_right;
+    if (left)
+        return move_left;
+    double leftRatio = ratio(leftLine), rightRatio = ratio(rightLine);
+    if (leftRatio != INFINITY && rightRatio != INFINITY) {
+        // lots of codes
+    }
     return move_forward;
 }
