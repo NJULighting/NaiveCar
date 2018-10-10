@@ -38,7 +38,7 @@ double ratio(double x1, double y1, double x2, double y2);
 
 double dot(std::vector<double> vector1, std::vector<double> vector2);
 
-Vec4i findClosestLine(std::vector<Vec4i> *lines, double kernel_x, double kernel_y);
+Vec4i findClosestLine(std::vector <Vec4i> *lines, double kernel_x, double kernel_y);
 
 Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine);
 
@@ -85,7 +85,7 @@ int main() {
         cvtColor(image, gray_image, COLOR_RGB2GRAY);
         Canny(gray_image, contour, CANNY_LOWER_BOUND, CANNY_UPPER_BOUND);
 
-        std::vector<Vec4i> lines, leftLines, rightLines;
+        std::vector <Vec4i> lines, leftLines, rightLines;
         HoughLinesP(contour, lines, MY_RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
 
         // take part into different types and filter useless lines
@@ -152,7 +152,7 @@ int main() {
 #ifdef _DEBUG
 
         std::cout << leftLine << " " << rightLine << " " << midLine << std::endl;
-        std::vector<Vec4i> test;
+        std::vector <Vec4i> test;
         test.push_back(leftLine);
         test.push_back(rightLine);
         test.push_back(midLine);
@@ -198,7 +198,7 @@ double dot(std::vector<double> vector1, std::vector<double> vector2) {
     return sum;
 }
 
-Vec4i findClosestLine(std::vector<Vec4i> *lines, double kernel_x, double kernel_y) {
+Vec4i findClosestLine(std::vector <Vec4i> *lines, double kernel_x, double kernel_y) {
     double dist = INFINITY;
     Vec4i vec4i;
     for (Vec4i vec: *lines) {
@@ -271,6 +271,38 @@ MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, c
     return move_forward;
 }
 
+
+void generalEquation(const Vec4i &line, double &A, double &B, double &C) {
+    A = line[3] - line[1];
+    B = line[0] - line[2];
+    C = line[2] * line[1] - line[0] * line[3];
+}
+
 Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine) {
-    return cv::Vec4i();
+    double A1, B1, C1, A2, B2, C2, x1, y1, x2, y2;
+    generalEquation(leftLine, A1, B1, C1);
+    generalEquation(rightLine, A2, B2, C2);
+
+    double m = A1 * B2 - A2 * B1;
+
+    x1 = (C2 * B1 - C1 * B2) / m;
+    y1 = (C1 * A2 - C2 * A1) / m;
+
+    double l1, l2, v1x, v1y, v2x, v2y, v3x, v3y;
+    v1x = leftLine[0] - leftLine[2];
+    v2x = rightLine[0] - rightLine[2];
+    v1y = leftLine[1] - leftLine[3];
+    v2y = rightLine[1] - rightLine[3];
+    l1 = sqrt(v1x * v1x + v1y * v1y);
+    l2 = sqrt(v2x * v2x + v2y * v2y);
+
+    v3x = v1x / l1 + v2x / l2;
+    v3y = v1y / l1 + v2y / l2;
+
+    v3x+=x1;
+    v3y+=y1;
+
+    Vec4i bisector = Vec4i(x1,y1,v3x,v3y);
+
+    return bisector;
 }
