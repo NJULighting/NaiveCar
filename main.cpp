@@ -21,7 +21,8 @@ const double THETA = CV_PI / 90.0;
 const int HOUGH_LINE_THRESHOLD = 50;
 const int MIN_LINE_LENGTH = 60;
 const int MAX_LINE_GAP = 50;
-const double TURN_THRESHOULD = 50;
+const double BOTTOM_DISTANCE_THRESHOLD = 50;
+const double BISECTOR_RATIO_THRESHOLD = 1.5590321636451379;
 const int SPEED = 50;
 const int TURN_ANGLE = 5;
 
@@ -250,13 +251,15 @@ MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, c
 
         double bottomDistance = midLineBottomX - bisectorBottomX;
 
-        if (bottomDistance > 0 && bottomDistance < TURN_THRESHOULD && bisectorRatio < 0) {
+        if (bottomDistance > 0 && bottomDistance < BOTTOM_DISTANCE_THRESHOLD
+            && bisectorRatio < 0 && -bisectorRatio < BISECTOR_RATIO_THRESHOLD) {
             // If it heads northwest and is at the right of the path
             return move_right;
         } else if (bottomDistance > 0 && bisectorRatio > 0) {
             // Head northeast and is at the right of the path
             return move_left;
-        } else if (bottomDistance < 0 && -bottomDistance < TURN_THRESHOULD && bisectorRatio > 0) {
+        } else if (bottomDistance < 0 && -bottomDistance < BOTTOM_DISTANCE_THRESHOLD
+                   && bisectorRatio > 0 && bisectorRatio < BISECTOR_RATIO_THRESHOLD) {
             // Head northeast and is at the left of the path
             return move_left;
         } else if (bottomDistance < 0 && bisectorRatio < 0) {
@@ -265,7 +268,6 @@ MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, c
         }
     }
 
-    // If the car is out of the turning threshold, it'll just go forward
     return move_forward;
 }
 
