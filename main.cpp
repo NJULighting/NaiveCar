@@ -21,6 +21,9 @@ const double THETA = CV_PI / 90.0;
 const int HOUGH_LINE_THRESHOLD = 50;
 const int MIN_LINE_LENGTH = 60;
 const int MAX_LINE_GAP = 50;
+const double TURN_THRESHOULD = 50;
+const int SPEED = 50;
+const int TURN_ANGLE = 5;
 
 enum MoveState {
     move_forward,
@@ -29,23 +32,27 @@ enum MoveState {
 };
 
 double ratio(Vec4i line);
-double ratio(double x1, double y1, double x2, double y2);
-double dot(std::vector<double> vector1, std::vector<double> vector2);
-Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel_y);
-MoveState generateNextMoveState(Vec4i leftLine, Vec4i rightLine);
 
-inline double distance(double x1, double y1, double x2, double y2)
-{
+double ratio(double x1, double y1, double x2, double y2);
+
+double dot(std::vector<double> vector1, std::vector<double> vector2);
+
+Vec4i findClosestLine(std::vector<Vec4i> *lines, double kernel_x, double kernel_y);
+
+Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine);
+
+MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, const Vec4i &bisector,
+                                const Vec4i &midLine);
+
+inline double distance(double x1, double y1, double x2, double y2) {
     return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
 
-inline bool emptyLine(Vec4i vec)
-{
+inline bool emptyLine(Vec4i vec) {
     return vec[0] == 0 && vec[1] == 0 && vec[2] == 0 && vec[3] == 0;
 }
 
-int main()
-{
+int main() {
     // 从摄像头获取图片信息
 //    VideoCapture capture(CAM_PATH);
 //    if (!capture.isOpened())
@@ -58,13 +65,18 @@ int main()
 //
 //    std::clog << "Frame Size: " << width << height << std::endl;
 
-    Mat image = imread("/Users/iznauy/NaiveCar/example5.jpg", IMREAD_COLOR);
+    Mat image = imread("/Users/jundaliao/CLionProjects/NaiveCar/examples/example5.jpg", IMREAD_COLOR);
     Mat gray_image, contour;
 
     double height = image.rows;
     double width = image.cols;
 
-    while(true) {
+    // Init the libGPIO
+#ifdef _ON_RASPBERRY
+    init();
+#endif
+
+    while (true) {
 //        capture >> image;
         if (image.empty())
             break;
@@ -76,7 +88,7 @@ int main()
         HoughLinesP(contour, lines, MY_RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
 
         // take part into different types and filter useless lines
-        for (Vec4i & vec: lines) {
+        for (Vec4i &vec: lines) {
 
             int x1 = vec[0], y1 = vec[1], x2 = vec[2], y2 = vec[3];
             bool left = false, right = false;
@@ -117,59 +129,75 @@ int main()
         Vec4i leftLine = findClosestLine(&leftLines, kernel_x, kernel_y);
         Vec4i rightLine = findClosestLine(&rightLines, kernel_x, kernel_y);
 
+        Vec4i midLine = Vec4i(int(kernel_x), 0, int(kernel_x), int(kernel_y));
+        Vec4i bisector = findAngleBisector(leftLine, rightLine);
 
-        #ifdef _DEBUG
+#ifdef _ON_RASPBERRY
+        MoveState nextAction = generateNextMoveState(leftLine, rightLine, bisector, midLine);
 
-        std::cout << leftLine << " " << rightLine << std::endl;
+        controlLeft(FORWARD, SPEED);
+        controlRight(FORWARD, SPEED);
+
+        if (nextAction == move_left) {
+            turnTo(-TURN_ANGLE);
+        } else if (nextAction == move_right) {
+            turnTo(TURN_ANGLE);
+        }
+
+        delay(1000);
+#endif
+
+
+#ifdef _DEBUG
+
+        std::cout << leftLine << " " << rightLine << " " << midLine << std::endl;
         std::vector<Vec4i> test;
         test.push_back(leftLine);
         test.push_back(rightLine);
+        test.push_back(midLine);
 
-        for(Vec4i vec: test) { // just show
+        for (Vec4i vec: test) { // just show
             int x, y;
             x = vec[0] - vec[2];
             y = vec[1] - vec[3];
 
-            line(image, Point(vec[0] + 10 * x, vec[1] + 10 * y), Point(vec[2] - 10 * x, vec[3] - 10 * y), Scalar(255, 0, 0), 5);
+            line(image, Point(vec[0] + 10 * x, vec[1] + 10 * y), Point(vec[2] - 10 * x, vec[3] - 10 * y),
+                 Scalar(255, 0, 0), 5);
         }
 
         std::cout << ratio(leftLine) << " " << ratio(rightLine) << std::endl;
+//        std::cout << "The car will " << nextAction << std::endl;
 
         imshow("show lines", image);
         waitKey(0);
 
 
-
         break;
 
-        #endif
+#endif
     }
 
 }
 
-double ratio(Vec4i line)
-{
+double ratio(Vec4i line) {
     return ratio(line[0], line[1], line[2], line[3]);
 }
 
-double ratio(double x1, double y1, double x2, double y2)
-{
+double ratio(double x1, double y1, double x2, double y2) {
     if (x1 == x2)
         return INFINITY;
     else
         return (y2 - y1) / (x2 - x1);
 }
 
-double dot(std::vector<double> vector1, std::vector<double> vector2)
-{
+double dot(std::vector<double> vector1, std::vector<double> vector2) {
     double sum = 0.0;
     for (int i = 0; i < vector1.size(); i++)
         sum += vector1[i] * vector2[i];
     return sum;
 }
 
-Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel_y)
-{
+Vec4i findClosestLine(std::vector<Vec4i> *lines, double kernel_x, double kernel_y) {
     double dist = INFINITY;
     Vec4i vec4i;
     for (Vec4i vec: *lines) {
@@ -198,11 +226,11 @@ Vec4i findClosestLine(std::vector<Vec4i> * lines, double kernel_x, double kernel
     }
 
     return vec4i;
-
 }
 
-MoveState generateNextMoveState(Vec4i leftLine, Vec4i rightLine)
-{
+
+MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, const Vec4i &bisector,
+                                const Vec4i &midLine) {
     bool left = emptyLine(leftLine), right = emptyLine(rightLine);
     if (left && right)
         return move_forward;
@@ -210,9 +238,37 @@ MoveState generateNextMoveState(Vec4i leftLine, Vec4i rightLine)
         return move_right;
     if (left)
         return move_left;
+
     double leftRatio = ratio(leftLine), rightRatio = ratio(rightLine);
     if (leftRatio != INFINITY && rightRatio != INFINITY) {
-        // lots of codes
+        // Calculate distance between bottom intersection
+        double midLineBottomX = midLine[0];
+
+        double bisectorRatio = ratio(bisector);
+        double height = abs(midLine[3] - midLine[1]);
+        double bisectorBottomX = (bisector[1] - height) / bisectorRatio + bisector[0];
+
+        double bottomDistance = midLineBottomX - bisectorBottomX;
+
+        if (bottomDistance > 0 && bottomDistance < TURN_THRESHOULD && bisectorRatio < 0) {
+            // If it heads northwest and is at the right of the path
+            return move_right;
+        } else if (bottomDistance > 0 && bisectorRatio > 0) {
+            // Head northeast and is at the right of the path
+            return move_left;
+        } else if (bottomDistance < 0 && -bottomDistance < TURN_THRESHOULD && bisectorRatio > 0) {
+            // Head northeast and is at the left of the path
+            return move_left;
+        } else if (bottomDistance < 0 && bisectorRatio < 0) {
+            // Head northeast and is at the right of the path
+            return move_right;
+        }
     }
+
+    // If the car is out of the turning threshold, it'll just go forward
     return move_forward;
+}
+
+Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine) {
+    return cv::Vec4i();
 }
