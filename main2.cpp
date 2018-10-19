@@ -35,6 +35,10 @@ const int MAX_LINE_GAP = 50;
 // constants abouts control
 const int LEFT_SPEED = 50;
 const int RIGHT_SPEED = 50;
+const int LEFT_THRESHOLD = 40;
+const int RIGHT_THRESHOLD = 40;
+const int TURN_LEFT_ANGLE = 5;
+const int TURN_RIGHT_ANGLE = 5;
 
 enum MoveState
 {
@@ -65,6 +69,8 @@ void generalEquation(const Vec4i &line, double & A, double & B, double & C);
 Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine);
 MoveState generateNextMoveState(const Vec4i & leftLine, const Vec4i & rightLine, const Vec4i & bisector);
 void calculateCrossoverPoint(const Vec4i & line1, const Vec4i & line2, double & x, double & y);
+void controlByNaiveMethod(MoveState state);
+void controlByPid(); // to be finished @Liao
 
 int main()
 {
@@ -76,7 +82,12 @@ int main()
 
     Mat image;
 
+    init();
+
     while (true) {
+        if (!capture.isOpened())
+            break;
+
         capture >> image;
         std::vector <Vec4i> leftLines, rightLines;
         findLeftAndRightLines(image, leftLines, rightLines);
@@ -88,8 +99,7 @@ int main()
 
         // get next moving state
         MoveState moveState = generateNextMoveState(leftLine, rightLine, bisector);
-
-        break;
+        controlByNaiveMethod(moveState);
     }
 
     return 0;
@@ -248,8 +258,21 @@ MoveState generateNextMoveState(const Vec4i & leftLine, const Vec4i & rightLine,
         Vec4i horizon(-CAM_WIDTH / 2, 0, CAM_WIDTH / 2, 0);
         double crossoverX, crossoverY;
         calculateCrossoverPoint(bisector, horizon, crossoverX, crossoverY);
-
+        assert(crossoverY < 1 && crossoverY > -1);
+        if (crossoverX > RIGHT_THRESHOLD)
+            return MoveState::move_left;
+        if (-crossoverX > LEFT_THRESHOLD)
+            return MoveState::move_right;
     }
-
     return move_forward;
+}
+
+void controlByNaiveMethod(MoveState state)
+{
+    if (state == move_left)
+        turnTo(-TURN_LEFT_ANGLE);
+    if (state == move_right)
+        turnTo(TURN_RIGHT_ANGLE);
+    controlLeft(FORWARD, LEFT_SPEED);
+    controlRight(FORWARD, RIGHT_SPEED);
 }
