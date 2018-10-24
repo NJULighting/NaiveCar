@@ -11,6 +11,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "GPIOlib.h"
+#include "PID.h"
 
 #define _DEBUG
 #define _ON_RASPBERRY
@@ -40,40 +41,49 @@ const int RIGHT_THRESHOLD = 40;
 const int TURN_LEFT_ANGLE = 5;
 const int TURN_RIGHT_ANGLE = 5;
 
-enum MoveState
-{
+// constants about PID control
+const int PID_ANGLE_FACTOR = 5;
+
+enum MoveState {
     move_forward,
     move_left,
     move_right
 };
 
 // inline methods
-inline double distance(double x1, double y1, double x2, double y2)
-{
+inline double distance(double x1, double y1, double x2, double y2) {
     return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
 
-inline bool emptyLine(const Vec4i & vec)
-{
+inline bool emptyLine(const Vec4i &vec) {
     return vec[0] == 0 && vec[1] == 0 && vec[2] == 0 && vec[3] == 0;
 }
 
 // common method
-double ratio(const Vec4i & line);
+double ratio(const Vec4i &line);
+
 double ratio(double x1, double y1, double x2, double y2);
-void lineFlip(Vec4i & line); // make the center of bottom (0, 0)
-void findLeftAndRightLines(Mat & image, std::vector<Vec4i> & leftLines, std::vector<Vec4i> & rightLines);
-Vec4i findClosestLine(const std::vector <Vec4i> & lines);
-double dot(const std::vector<double> & vector1, const std::vector<double> & vector2);
-void generalEquation(const Vec4i &line, double & A, double & B, double & C);
+
+void lineFlip(Vec4i &line); // make the center of bottom (0, 0)
+void findLeftAndRightLines(Mat &image, std::vector<Vec4i> &leftLines, std::vector<Vec4i> &rightLines);
+
+Vec4i findClosestLine(const std::vector<Vec4i> &lines);
+
+double dot(const std::vector<double> &vector1, const std::vector<double> &vector2);
+
+void generalEquation(const Vec4i &line, double &A, double &B, double &C);
+
 Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine);
-MoveState generateNextMoveState(const Vec4i & leftLine, const Vec4i & rightLine, const Vec4i & bisector);
-void calculateCrossoverPoint(const Vec4i & line1, const Vec4i & line2, double & x, double & y);
+
+MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, const Vec4i &bisector);
+
+void calculateCrossoverPoint(const Vec4i &line1, const Vec4i &line2, double &x, double &y);
+
 void controlByNaiveMethod(MoveState state);
+
 void controlByPid(); // to be finished @Liao
 
-int main()
-{
+int main() {
     // init cam
     VideoCapture capture(CAM_PATH);
     if (!capture.isOpened()) {
@@ -84,12 +94,16 @@ int main()
 
     init();
 
+    // Initialize PID controller
+    PID pid;
+    pid.Init(0.2, 0, 3);
+
     while (true) {
         if (!capture.isOpened())
             break;
 
         capture >> image;
-        std::vector <Vec4i> leftLines, rightLines;
+        std::vector<Vec4i> leftLines, rightLines;
         findLeftAndRightLines(image, leftLines, rightLines);
 
         // find important lines
@@ -106,20 +120,18 @@ int main()
 }
 
 
-void lineFlip(Vec4i & line)
-{
+void lineFlip(Vec4i &line) {
     line[0] -= CAM_WIDTH / 2;
     line[2] -= CAM_WIDTH / 2;
     line[1] = -line[1] + CAM_HEIGHT;
     line[3] = -line[3] + CAM_HEIGHT;
 }
 
-void findLeftAndRightLines(Mat & image, std::vector<Vec4i> & leftLines, std::vector<Vec4i> & rightLines)
-{
+void findLeftAndRightLines(Mat &image, std::vector<Vec4i> &leftLines, std::vector<Vec4i> &rightLines) {
     Mat gray_image, contour;
     cvtColor(image, gray_image, COLOR_RGB2GRAY);
     Canny(gray_image, contour, CANNY_LOWER_BOUND, CANNY_UPPER_BOUND);
-    std::vector <Vec4i> lines;
+    std::vector<Vec4i> lines;
     HoughLinesP(contour, lines, MY_RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
 
     for (Vec4i &vec: lines) {
@@ -128,22 +140,22 @@ void findLeftAndRightLines(Mat & image, std::vector<Vec4i> & leftLines, std::vec
         int x1 = vec[0], y1 = vec[1], x2 = vec[2], y2 = vec[3];
         bool left = false, right = false;
 
-        if (x1 < -CAM_WIDTH / 4 || x2 <  -CAM_WIDTH/4)
+        if (x1 < -CAM_WIDTH / 4 || x2 < -CAM_WIDTH / 4)
             left = true;
         if (x1 > CAM_WIDTH / 4 || x2 > CAM_WIDTH / 4)
             right = true;
         if ((!left && !right) || (left && right)) // 贯通左右的线或者在中间的短线
             continue;
 
-        double ratio = ratio(vec);
-        if (left && (ratio == INFINITY || ratio > 0.2))
+        double _ratio = ratio(vec);
+        if (left && (_ratio == INFINITY || _ratio > 0.2))
             leftLines.push_back(vec);
-        if (right && (ratio == INFINITY || ratio < -0.2))
+        if (right && (_ratio == INFINITY || _ratio < -0.2))
             rightLines.push_back(vec);
     }
 }
 
-double ratio(const Vec4i & line) {
+double ratio(const Vec4i &line) {
     return ratio(line[0], line[1], line[2], line[3]);
 }
 
@@ -154,11 +166,10 @@ double ratio(double x1, double y1, double x2, double y2) {
         return (y2 - y1) / (x2 - x1);
 }
 
-Vec4i findClosestLine(const std::vector <Vec4i> & lines)
-{
+Vec4i findClosestLine(const std::vector<Vec4i> &lines) {
     double dist = INFINITY;
     Vec4i closestLine;
-    for (Vec4i & line: lines) {
+    for (Vec4i line: lines) {
         int x1 = line[0], y1 = line[1], x2 = line[2], y2 = line[3];
         double lineLength = distance(x1, y1, x2, y2);
 
@@ -184,22 +195,20 @@ Vec4i findClosestLine(const std::vector <Vec4i> & lines)
     return closestLine;
 }
 
-double dot(const std::vector<double> & vector1, const std::vector<double> & vector2)
-{
+double dot(const std::vector<double> &vector1, const std::vector<double> &vector2) {
     double sum = 0.0;
     for (int i = 0; i < vector1.size(); i++)
         sum += vector1[i] * vector2[i];
     return sum;
 }
 
-void generalEquation(const Vec4i & line, double & A, double & B, double & C) {
+void generalEquation(const Vec4i &line, double &A, double &B, double &C) {
     A = line[3] - line[1];
     B = line[0] - line[2];
     C = line[2] * line[1] - line[0] * line[3];
 }
 
-void calculateCrossoverPoint(const Vec4i & line1, const Vec4i & line2, double & x, double & y)
-{
+void calculateCrossoverPoint(const Vec4i &line1, const Vec4i &line2, double &x, double &y) {
     double A1, B1, C1, A2, B2, C2;
     generalEquation(line1, A1, B1, C1);
     generalEquation(line2, A2, B2, C2);
@@ -210,8 +219,7 @@ void calculateCrossoverPoint(const Vec4i & line1, const Vec4i & line2, double & 
     y = (C1 * A2 - C2 * A1) / m;
 }
 
-Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine)
-{
+Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine) {
     bool leftEmpty = emptyLine(leftLine), rightEmpty = emptyLine(rightLine);
     if (leftEmpty || rightEmpty)
         return Vec4i(0, 0, 0, 0); // empty line
@@ -243,8 +251,7 @@ Vec4i findAngleBisector(const Vec4i &leftLine, const Vec4i &rightLine)
                  static_cast<int>(y2));
 }
 
-MoveState generateNextMoveState(const Vec4i & leftLine, const Vec4i & rightLine, const Vec4i & bisector)
-{
+MoveState generateNextMoveState(const Vec4i &leftLine, const Vec4i &rightLine, const Vec4i &bisector) {
     bool leftEmpty = emptyLine(leftLine), rightEmpty = emptyLine(rightLine);
     if (leftEmpty && rightEmpty)
         return MoveState::move_forward;
@@ -267,12 +274,30 @@ MoveState generateNextMoveState(const Vec4i & leftLine, const Vec4i & rightLine,
     return move_forward;
 }
 
-void controlByNaiveMethod(MoveState state)
-{
+void controlByNaiveMethod(MoveState state) {
     if (state == move_left)
         turnTo(-TURN_LEFT_ANGLE);
     if (state == move_right)
         turnTo(TURN_RIGHT_ANGLE);
     controlLeft(FORWARD, LEFT_SPEED);
     controlRight(FORWARD, RIGHT_SPEED);
+}
+
+void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) {
+    // get crossing point of left line and right line
+    double crossingX, crossingY;
+    calculateCrossoverPoint(leftLine, rightLine, crossingX, crossingY);
+
+    // use distance between crossing x and x of original point as error
+    double error = crossingX;
+    pid.UpdateError(error);
+
+    // Transfer output to angle
+    double totalError = pid.TotalError();
+    int angle = (int) (totalError * PID_ANGLE_FACTOR);
+
+    std::cout << "total error is " << totalError
+    << "\nturn angle is " << angle << std::endl;
+
+    turnTo(angle);
 }
