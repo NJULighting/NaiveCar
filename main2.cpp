@@ -96,7 +96,7 @@ int main() {
 
     // Initialize PID controller
     PID pid;
-    pid.Init(0.2, 0, 3);
+    pid.Init(0.02, 0, 0.03);
 
     while (true) {
         if (!capture.isOpened())
@@ -284,6 +284,11 @@ void controlByNaiveMethod(MoveState state) {
 }
 
 void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) {
+    bool isLeftEmpty = emptyLine(leftLine), isRightEmpty = emptyLine(rightLine);
+    if (isLeftEmpty || isRightEmpty) {
+        std::cout << "Lines are not detected" << std::endl;
+        return;
+    }
     // get crossing point of left line and right line
     double crossingX, crossingY;
     calculateCrossoverPoint(leftLine, rightLine, crossingX, crossingY);
@@ -299,5 +304,7 @@ void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) 
     std::cout << "total error is " << totalError
     << "\nturn angle is " << angle << std::endl;
 
+    controlLeft(FORWARD, LEFT_SPEED);
+    controlRight(FORWARD, RIGHT_SPEED);
     turnTo(angle);
 }
