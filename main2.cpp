@@ -81,7 +81,7 @@ void calculateCrossoverPoint(const Vec4i &line1, const Vec4i &line2, double &x, 
 
 void controlByNaiveMethod(MoveState state);
 
-void controlByPid(); // to be finished @Liao
+void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine);
 
 int main() {
     // init cam
@@ -96,7 +96,7 @@ int main() {
 
     // Initialize PID controller
     PID pid;
-    pid.Init(0.02, 0, 0.03);
+    pid.Init(0.2, 0, 0.3);
 
     while (true) {
         if (!capture.isOpened())
@@ -114,6 +114,8 @@ int main() {
         // get next moving state
         MoveState moveState = generateNextMoveState(leftLine, rightLine, bisector);
         controlByNaiveMethod(moveState);
+
+//        controlByPid(pid, leftLine, rightLine);
     }
 
     return 0;
@@ -283,7 +285,7 @@ void controlByNaiveMethod(MoveState state) {
     controlRight(FORWARD, RIGHT_SPEED);
 }
 
-void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) {
+void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine) {
     bool isLeftEmpty = emptyLine(leftLine), isRightEmpty = emptyLine(rightLine);
     if (isLeftEmpty || isRightEmpty) {
         std::cout << "Lines are not detected" << std::endl;
@@ -299,10 +301,10 @@ void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) 
 
     // Transfer output to angle
     double totalError = pid.TotalError();
-    int angle = (int) (totalError * PID_ANGLE_FACTOR);
+    int angle = (int) totalError;
 
     std::cout << "total error is " << totalError
-    << "\nturn angle is " << angle << std::endl;
+              << "\nturn angle is " << angle << std::endl;
 
     controlLeft(FORWARD, LEFT_SPEED);
     controlRight(FORWARD, RIGHT_SPEED);
