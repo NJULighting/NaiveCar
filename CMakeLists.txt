@@ -5,7 +5,7 @@ find_package(OpenCV REQUIRED)
 
 set(CMAKE_CXX_STANDARD 11)
 
-set(SOURCE_FILES GPIOlib.h main2.cpp GPIOlib.cpp)
+set(SOURCE_FILES GPIOlib.h main.cpp GPIOlib.cpp)
 add_executable(NaiveCar ${SOURCE_FILES})
 
 
