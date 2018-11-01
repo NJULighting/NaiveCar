@@ -11,7 +11,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "GPIOlib.h"
-#include "PID.h"
+//#include "PID.h"
 
 #define _DEBUG
 #define _ON_RASPBERRY
@@ -43,6 +43,87 @@ const int TURN_RIGHT_ANGLE = 5;
 
 // constants about PID control
 const int PID_ANGLE_FACTOR = 5;
+
+class PID {
+public:
+    /*
+    * Errors
+    */
+    double p_error;
+    double i_error;
+    double d_error;
+
+    /*
+    * Coefficients
+    */
+    double Kp;
+    double Ki;
+    double Kd;
+
+    /*
+    * Constructor
+    */
+    PID();
+
+    /*
+    * Destructor.
+    */
+    virtual ~PID();
+
+    /*
+    * Initialize PID.
+    */
+    void Init(double Kp, double Ki, double Kd);
+
+    /*
+    * Update the PID error variables given cross track error.
+    */
+    void UpdateError(double cte);
+
+    /*
+    * Calculate the total PID error.
+    */
+    double TotalError();
+
+private:
+
+    double prev_cte;
+    double prev_2_cte;
+
+};
+
+PID::PID() {
+    prev_cte = 0;
+    prev_2_cte = 0;
+
+    p_error = 0;
+    i_error = 0;
+    d_error = 0;
+}
+
+PID::~PID() = default;
+
+void PID::Init(double Kp, double Ki, double Kd) {
+    this->Kp = Kp;
+    this->Ki = Ki;
+    this->Kd = Kd;
+}
+
+void PID::UpdateError(double cte) {
+    p_error = cte;
+
+    // more accurate derivative
+    // see https://en.wikipedia.org/wiki/Finite_difference_coefficient
+    d_error = 1.5 * cte - 2 * prev_cte + 0.5 * prev_2_cte;
+    prev_2_cte = prev_cte;
+    prev_cte = cte;
+
+    i_error += cte;
+}
+
+double PID::TotalError() {
+    return Kp * p_error + Kd * d_error + Ki * i_error;
+}
 
 enum MoveState {
     move_forward,
@@ -81,7 +162,7 @@ void calculateCrossoverPoint(const Vec4i &line1, const Vec4i &line2, double &x, 
 
 void controlByNaiveMethod(MoveState state);
 
-void controlByPid(); // to be finished @Liao
+void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine);
 
 int main() {
     // init cam
@@ -96,7 +177,7 @@ int main() {
 
     // Initialize PID controller
     PID pid;
-    pid.Init(0.02, 0, 0.03);
+    pid.Init(0.2, 0, 0.3);
 
     while (true) {
         if (!capture.isOpened())
@@ -114,6 +195,8 @@ int main() {
         // get next moving state
         MoveState moveState = generateNextMoveState(leftLine, rightLine, bisector);
         controlByNaiveMethod(moveState);
+
+//        controlByPid(pid, leftLine, rightLine);
     }
 
     return 0;
@@ -283,7 +366,7 @@ void controlByNaiveMethod(MoveState state) {
     controlRight(FORWARD, RIGHT_SPEED);
 }
 
-void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) {
+void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine) {
     bool isLeftEmpty = emptyLine(leftLine), isRightEmpty = emptyLine(rightLine);
     if (isLeftEmpty || isRightEmpty) {
         std::cout << "Lines are not detected" << std::endl;
@@ -299,10 +382,10 @@ void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) 
 
     // Transfer output to angle
     double totalError = pid.TotalError();
-    int angle = (int) (totalError * PID_ANGLE_FACTOR);
+    int angle = (int) totalError;
 
     std::cout << "total error is " << totalError
-    << "\nturn angle is " << angle << std::endl;
+              << "\nturn angle is " << angle << std::endl;
 
     controlLeft(FORWARD, LEFT_SPEED);
     controlRight(FORWARD, RIGHT_SPEED);
