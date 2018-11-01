@@ -11,10 +11,6 @@
 #include <opencv2/opencv.hpp>
 
 #include "GPIOlib.h"
-#include "PID.h"
-
-#define _DEBUG
-#define _ON_RASPBERRY
 
 using namespace GPIO;
 using namespace cv;
@@ -44,6 +40,90 @@ const int TURN_RIGHT_ANGLE = 5;
 // constants about PID control
 const int PID_ANGLE_FACTOR = 5;
 
+
+class PID {
+public:
+    /*
+     * Errors
+     */
+    double p_error;
+    double i_error;
+    double d_error;
+    
+    /*
+     * Coefficients
+     */
+    double Kp;
+    double Ki;
+    double Kd;
+    
+    /*
+     * Constructor
+     */
+    PID();
+    
+    /*
+     * Destructor.
+     */
+    virtual ~PID();
+    
+    /*
+     * Initialize PID.
+     */
+    void Init(double Kp, double Ki, double Kd);
+    
+    /*
+     * Update the PID error variables given cross track error.
+     */
+    void UpdateError(double cte);
+    
+    /*
+     * Calculate the total PID error.
+     */
+    double TotalError();
+    
+private:
+    
+    double prev_cte;
+    double prev_2_cte;
+    
+};
+
+
+PID::PID() {
+    prev_cte = 0;
+    prev_2_cte = 0;
+    
+    p_error = 0;
+    i_error = 0;
+    d_error = 0;
+}
+
+PID::~PID() = default;
+
+void PID::Init(double Kp, double Ki, double Kd) {
+    this->Kp = Kp;
+    this->Ki = Ki;
+    this->Kd = Kd;
+}
+
+void PID::UpdateError(double cte) {
+    p_error = cte;
+    
+    // more accurate derivative
+    // see https://en.wikipedia.org/wiki/Finite_difference_coefficient
+    d_error = 1.5 * cte - 2 * prev_cte + 0.5 * prev_2_cte;
+    prev_2_cte = prev_cte;
+    prev_cte = cte;
+    
+    i_error += cte;
+}
+
+double PID::TotalError() {
+    return -(Kp * p_error + Kd * d_error + Ki * i_error);
+}
+
+
 enum MoveState {
     move_forward,
     move_left,
@@ -62,9 +142,12 @@ inline bool emptyLine(const Vec4i &vec) {
 // common method
 double ratio(const Vec4i &line);
 
+void sharpen(const cv::Mat image, cv::Mat & result);
+
 double ratio(double x1, double y1, double x2, double y2);
 
 void lineFlip(Vec4i &line); // make the center of bottom (0, 0)
+void reverseLineFlip(Vec4i &line);
 void findLeftAndRightLines(Mat &image, std::vector<Vec4i> &leftLines, std::vector<Vec4i> &rightLines);
 
 Vec4i findClosestLine(const std::vector<Vec4i> &lines);
@@ -90,18 +173,17 @@ int main() {
         capture.open(atoi(CAM_PATH.c_str()));
     }
 
-    Mat image;
+    Mat image;// = imread("../examples/example4.jpg", IMREAD_COLOR);
 
     init();
 
     // Initialize PID controller
-    PID pid;
-    pid.Init(0.02, 0, 0.03);
+//    PID pid;
+//    pid.Init(0.02, 0, 0.03);
 
     while (true) {
         if (!capture.isOpened())
             break;
-
         capture >> image;
         std::vector<Vec4i> leftLines, rightLines;
         findLeftAndRightLines(image, leftLines, rightLines);
@@ -114,6 +196,26 @@ int main() {
         // get next moving state
         MoveState moveState = generateNextMoveState(leftLine, rightLine, bisector);
         controlByNaiveMethod(moveState);
+//
+//        std::vector<Vec4i> test;
+//        test.push_back(leftLine);
+//        test.push_back(rightLine);
+//        test.push_back(bisector);
+//
+//        for (Vec4i vec: test) { // just show
+//            reverseLineFlip(vec);
+//            int x, y;
+//            x = vec[0] - vec[2];
+//            y = vec[1] - vec[3];
+//
+//            line(image, Point(vec[0] + 10 * x, vec[1] + 10 * y), Point(vec[2] - 10 * x, vec[3] - 10 * y),
+//                 Scalar(255, 0, 0), 5);
+//        }
+//
+//        imshow("show lines", image);
+//        waitKey(0);
+//
+//        break;
     }
 
     return 0;
@@ -127,9 +229,19 @@ void lineFlip(Vec4i &line) {
     line[3] = -line[3] + CAM_HEIGHT;
 }
 
+void reverseLineFlip(Vec4i &line) {
+    line[1] = CAM_HEIGHT - line[1];
+    line[3] = CAM_HEIGHT - line[3];
+    line[0] += CAM_WIDTH / 2;
+    line[2] += CAM_WIDTH / 2;
+}
+
 void findLeftAndRightLines(Mat &image, std::vector<Vec4i> &leftLines, std::vector<Vec4i> &rightLines) {
-    Mat gray_image, contour;
-    cvtColor(image, gray_image, COLOR_RGB2GRAY);
+    Mat raw_gray_image, gray_image, contour;
+    cvtColor(image, raw_gray_image, COLOR_RGB2GRAY);
+    sharpen(raw_gray_image, gray_image);
+    imshow("666", gray_image);
+    waitKey(1);
     Canny(gray_image, contour, CANNY_LOWER_BOUND, CANNY_UPPER_BOUND);
     std::vector<Vec4i> lines;
     HoughLinesP(contour, lines, MY_RHO, THETA, HOUGH_LINE_THRESHOLD, MIN_LINE_LENGTH, MAX_LINE_GAP);
@@ -139,6 +251,9 @@ void findLeftAndRightLines(Mat &image, std::vector<Vec4i> &leftLines, std::vecto
 
         int x1 = vec[0], y1 = vec[1], x2 = vec[2], y2 = vec[3];
         bool left = false, right = false;
+
+        if (x1 == x2 && x1 > CAM_WIDTH / 2 - 5)
+            continue;
 
         if (x1 < -CAM_WIDTH / 4 || x2 < -CAM_WIDTH / 4)
             left = true;
@@ -307,4 +422,29 @@ void controlByPid(PID &pid, Vec4i &leftLine, Vec4i &rightLine, Vec4i &bisector) 
     controlLeft(FORWARD, LEFT_SPEED);
     controlRight(FORWARD, RIGHT_SPEED);
     turnTo(angle);
+}
+
+void sharpen(const cv::Mat image, cv::Mat &result)
+{
+    result.create(image.size(), image.type());
+    for(int j = 1; j < image.rows-1; j++)
+    {
+        const uchar* previous = image.ptr<const uchar>(j-1);
+        const uchar* current  = image.ptr<const uchar>(j);
+        const uchar* next     = image.ptr<const uchar>(j+1);
+
+        uchar* output = result.ptr<uchar>(j);
+        for(int i = 1; i < image.cols-1; i++)
+        {
+            //sharpened_pixel = 5*current-left-right-up-down;
+            //cv::saturate_cast用以对计算结果进行截断（0-255）
+            *output++ = cv::saturate_cast<uchar>(
+                    5*current[i]-current[i-1]
+                    -current[i+1]-previous[i]-next[i]);
+        }
+    }
+    result.row(0).setTo(cv::Scalar(0));
+    result.row(result.rows-1).setTo(cv::Scalar(0));
+    result.col(0).setTo(cv::Scalar(0));
+    result.col(result.cols-1).setTo(cv::Scalar(0));
 }
