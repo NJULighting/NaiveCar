@@ -12,6 +12,8 @@
 
 #include "GPIOlib.h"
 
+#define CAMERA
+
 using namespace GPIO;
 using namespace cv;
 
@@ -193,29 +195,31 @@ int main() {
         Vec4i rightLine = findClosestLine(rightLines);
         Vec4i bisector = findAngleBisector(leftLine, rightLine);
 
+        #ifndef CAMERA
         // get next moving state
         MoveState moveState = generateNextMoveState(leftLine, rightLine, bisector);
         controlByNaiveMethod(moveState);
-//
-//        std::vector<Vec4i> test;
-//        test.push_back(leftLine);
-//        test.push_back(rightLine);
-//        test.push_back(bisector);
-//
-//        for (Vec4i vec: test) { // just show
-//            reverseLineFlip(vec);
-//            int x, y;
-//            x = vec[0] - vec[2];
-//            y = vec[1] - vec[3];
-//
-//            line(image, Point(vec[0] + 10 * x, vec[1] + 10 * y), Point(vec[2] - 10 * x, vec[3] - 10 * y),
-//                 Scalar(255, 0, 0), 5);
-//        }
-//
-//        imshow("show lines", image);
-//        waitKey(0);
-//
-//        break;
+        #endif
+
+        #ifdef CAMERA
+        std::vector<Vec4i> test;
+        test.push_back(leftLine);
+        test.push_back(rightLine);
+        test.push_back(bisector);
+
+        for (Vec4i vec: test) { // just show
+            reverseLineFlip(vec);
+            int x, y;
+            x = vec[0] - vec[2];
+            y = vec[1] - vec[3];
+
+            line(image, Point(vec[0] + 10 * x, vec[1] + 10 * y), Point(vec[2] - 10 * x, vec[3] - 10 * y),
+                 Scalar(255, 0, 0), 5);
+        }
+
+        imshow("show lines", image);
+        waitKey(0);
+        #endif
     }
 
     return 0;
